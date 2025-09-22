@@ -10,7 +10,8 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-func readTokenFromFile(filename string) (string, error) {
+func readTokenFromFile(filename string) (string, error) { // Все что относится к загрузке конфига - в твоем случае энвы (токен бота, а дальше будет больше конфигов
+														  // вынести в отдельный модуль 
 	data, err := ioutil.ReadFile(filename)
 	if err != nil {
 		return "", err
@@ -52,7 +53,8 @@ func main() {
 
 	updates := bot.GetUpdatesChan(u)
 
-	for update := range updates {
+	for update := range updates { // Вынести всю логику обработки запросов в handlers.go - отдельный модуль в котором будут функции которые обрабатывают входящие запросы
+								  // типа - handle_telegram_update(update) / handle_telegram_message(update.Message)
 		if update.Message == nil {
 			continue
 		}
@@ -72,7 +74,8 @@ func main() {
 		// Стикеры
 		case update.Message.Sticker != nil:
 			// Пересылаем стикер
-			sticker := tgbotapi.NewSticker(update.Message.Chat.ID, update.Message.Sticker.FileID)
+			sticker := tgbotapi.NewSticker(update.Message.Chat.ID, update.Message.Sticker.FileID) // Сколько раз везде ты копируешь update? Разве есть необходимость везде обращаться к update или можно переиспользовать код?
+		
 			sticker.ReplyToMessageID = update.Message.MessageID
 			_, err := bot.Send(sticker)
 			if err != nil {
