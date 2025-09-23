@@ -1,0 +1,17 @@
+name: golangci-lint
+on:
+  push:
+    branches: [ base_bot_branch ]
+  pull_request:
+    branches: [ base_bot_branch ]
+
+jobs:
+  golangci:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: latest
