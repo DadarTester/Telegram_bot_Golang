@@ -1,0 +1,126 @@
+name: Code Formatting Check
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+
+jobs:
+  check-formatting:
+    name: Check Go Code Formatting
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+        cache: true
+        
+    - name: Install goimports
+      run: go install golang.org/x/tools/cmd/goimports@latest
+      
+    - name: Check formatting with gofmt
+      id: gofmt-check
+      run: |
+        echo "🔍 Checking code formatting with gofmt..."
+        UNFORMATTED=$(gofmt -l .)
+        if [ -n "$UNFORMATTED" ]; then
+          echo "❌ Found unformatted files:"
+          echo "$UNFORMATTED"
+          echo ""
+          echo "To fix, run: gofmt -w ."
+          echo "$UNFORMATTED" > gofmt-unformatted.txt
+          exit 1
+        else
+          echo "✅ All files are properly formatted with gofmt"
+        fi
+        
+    - name: Check imports with goimports
+      id: goimports-check
+      run: |
+        echo "🔍 Checking import formatting with goimports..."
+        UNFORMATTED_IMPORTS=$(goimports -l .)
+        if [ -n "$UNFORMATTED_IMPORTS" ]; then
+          echo "❌ Found files with incorrect imports:"
+          echo "$UNFORMATTED_IMPORTS"
+          echo ""
+          echo "To fix, run: goimports -w ."
+          echo "$UNFORMATTED_IMPORTS" > goimports-unformatted.txt
+          exit 1
+        else
+          echo "✅ All imports are properly formatted with goimports"
+        fi
+          
+    - name: Upload formatting details as artifact (on failure)
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: formatting-details
+        path: |
+          gofmt-unformatted.txt
+          goimports-unformatted.txt
+        retention-days: 1
+
+  auto-format-comment:
+    name: Auto-Format Suggestion
+    runs-on: ubuntu-latest
+    needs: check-formatting
+    if: failure() && github.event_name == 'pull_request'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+        
+    - name: Apply formatting and create diff
+      run: |
+        # Сохраняем оригинальное состояние
+        git add .
+        git stash
+        
+        # Применяем форматирование
+        gofmt -w .
+        go install golang.org/x/tools/cmd/goimports@latest
+        goimports -w .
+        
+        # Создаем diff
+        git add .
+        git diff --staged > formatting.diff || echo "No changes"
+        
+        # Восстанавливаем оригинальное состояние
+        git reset --hard HEAD
+        git stash pop || true
+        
+    - name: Create review comment with formatting suggestions
+      uses: actions/github-script@v6
+      env:
+        DIFF_CONTENT: ${{ steps.get-diff.outputs.diff }}
+      with:
+        script: |
+          try {
+            const diffContent = require('fs').readFileSync('formatting.diff', 'utf8');
+            
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `## ⚠️ Требуется форматирование кода
+                
+
+            });
+          } catch (error) {
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `## ⚠️ Требуется форматирование кода
+                
