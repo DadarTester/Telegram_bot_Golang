@@ -1,0 +1,92 @@
+name: golangci-lint
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+
+jobs:
+  golangci:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+          cache: true
+          
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: v1.55
+          args: --timeout=10m --out-format=github-actions
+          
+      - name: Upload lint results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-report
+          path: |
+            .golangci-lint-report.json
+          retention-days: 7
+
+  lint-report:
+    name: Lint Report
+    runs-on: ubuntu-latest
+    needs: golangci
+    if: always() && github.event_name == 'pull_request'
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download lint results
+        uses: actions/download-artifact@v4
+        with:
+          name: lint-report
+          
+      - name: Create summary comment
+        uses: actions/github-script@v6
+        if: needs.golangci.result == 'failure'
+        with:
+          script: |
+            const fs = require('fs');
+            let report = ' Linter ended with errors.';
+            
+            try {
+              if (fs.existsSync('.golangci-lint-report.json')) {
+                const data = JSON.parse(fs.readFileSync('.golangci-lint-report.json', 'utf8'));
+                const issues = data.Issues || [];
+                
+                if (issues.length > 0) {
+                  report = `## ❌ Lint Report: ${issues.length} problems found\n\n`;
+                  
+                  // Группируем по файлам
+                  const files = {};
+                  issues.forEach(issue => {
+                    if (!files[issue.FilePath]) files[issue.FilePath] = [];
+                    files[issue.FilePath].push(issue);
+                  });
+                  
+                  Object.entries(files).forEach(([file, fileIssues]) => {
+                    report += `### 📄 ${file}\n`;
+                    fileIssues.forEach(issue => {
+                      report += `- **Line ${issue.Line}**: ${issue.Text} (*${issue.FromLinter}*)\n`;
+                    });
+                    report += '\n';
+                  });
+                }
+              }
+            } catch (error) {
+              report = 'Check linter output.';
+            }
+            
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: report + '\n\n**For fix:** `make lint-fix`'
+            });
